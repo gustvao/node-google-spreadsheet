@@ -4,13 +4,15 @@ module.exports = {
   parserOptions: {
     sourceType: 'module',
     ecmaVersion: 2018,
+    project: './tsconfig.json'
   },
   env: {
     es6: true,
     node: true,
   },
   extends: [
-    'airbnb-base',
+    'airbnb/base',
+    'airbnb-typescript/base'
   ],
   plugins: [
     'async-await',

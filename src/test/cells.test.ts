@@ -1,14 +1,13 @@
-const _ = require('lodash');
-const delay = require('delay');
+import _  from 'lodash';
+import delay from 'delay';
 
-const { GoogleSpreadsheetFormulaError } = require('../index');
+import { GoogleSpreadsheet, GoogleSpreadsheetWorksheet, GoogleSpreadsheetCell, GoogleSpreadsheetFormulaError } from '../index';
 
-const docs = require('./load-test-docs')();
-const creds = require('./service-account-creds.json');
+import { DOC_IDS, testServiceAccountAuth } from './docs-and-auth';
 
-const doc = docs.private;
+const doc = new GoogleSpreadsheet(DOC_IDS.private, testServiceAccountAuth);
 
-let sheet;
+let sheet: GoogleSpreadsheetWorksheet;
 
 const NUM_ROWS = 10;
 const NUM_COLS = 10;
@@ -16,7 +15,6 @@ const TOTAL_CELLS = NUM_ROWS * NUM_COLS;
 
 describe('Cell-based operations', () => {
   beforeAll(async () => {
-    await doc.useServiceAccountAuth(creds);
     sheet = await doc.addSheet({
       gridProperties: {
         rowCount: NUM_ROWS,
@@ -101,15 +99,16 @@ describe('Cell-based operations', () => {
         'not a string or object': 5,
       }, (badFilter, description) => {
         it(`throws for ${description}`, async () => {
-          await expect(sheet.loadCells(badFilter)).rejects.toThrow();
+          await expect(sheet.loadCells(badFilter as any)).rejects.toThrow();
         });
       });
     });
   });
 
   describe('basic cell functionality', () => {
-    let c1; let c2; let
-      c3;
+    let c1: GoogleSpreadsheetCell;
+    let c2: GoogleSpreadsheetCell;
+    let c3: GoogleSpreadsheetCell;
     beforeEach(async () => {
       sheet.resetLocalCache(true);
       await sheet.loadCells('A1:C1');

@@ -1,15 +1,27 @@
-const _ = require('lodash');
+import _ from 'lodash';
 
-const { columnToLetter } = require('./utils');
+import { columnToLetter } from './utils';
 
-const { GoogleSpreadsheetFormulaError } = require('./errors');
+import { GoogleSpreadsheetFormulaError } from './errors';
+import GoogleSpreadsheetWorksheet from './GoogleSpreadsheetWorksheet';
 
-class GoogleSpreadsheetCell {
-  constructor(parentSheet, rowIndex, columnIndex, cellData) {
-    this._sheet = parentSheet; // the parent GoogleSpreadsheetWorksheet instance
-    this._row = rowIndex;
-    this._column = columnIndex;
+import { CellFormat, ColumnIndex, RowIndex } from './shared-types';
 
+
+export type CellValueType = 'boolValue' | 'stringValue' | 'numberValue' | 'errorValue';
+
+
+export default class GoogleSpreadsheetCell {
+  private _rawData: any;
+  private _draftData: any;
+  private _error: any;
+  
+  constructor(
+    readonly _sheet: GoogleSpreadsheetWorksheet,
+    private _rowIndex: RowIndex,
+    private _columnIndex: ColumnIndex,
+    cellData: any
+  ) {
     this._updateRawData(cellData);
     return this;
   }
@@ -25,10 +37,10 @@ class GoogleSpreadsheetCell {
   }
 
   // CELL LOCATION/ADDRESS /////////////////////////////////////////////////////////////////////////
-  get rowIndex() { return this._row; }
-  get columnIndex() { return this._column; }
-  get a1Column() { return columnToLetter(this._column + 1); }
-  get a1Row() { return this._row + 1; } // a1 row numbers start at 1 instead of 0
+  get rowIndex() { return this._rowIndex; }
+  get columnIndex() { return this._columnIndex; }
+  get a1Column() { return columnToLetter(this._columnIndex + 1); }
+  get a1Row() { return this._rowIndex + 1; } // a1 row numbers start at 1 instead of 0
   get a1Address() { return `${this.a1Column}${this.a1Row}`; }
 
   // CELL CONTENTS - VALUE/FORMULA/NOTES ///////////////////////////////////////////////////////////
@@ -102,7 +114,7 @@ class GoogleSpreadsheetCell {
   set userEnteredFormat(newVal) { throw new Error('Do not modify directly, instead use format properties'); }
   set effectiveFormat(newVal) { throw new Error('Read-only'); }
 
-  _getFormatParam(param) {
+  private _getFormatParam<T extends keyof CellFormat>(param: T): CellFormat[T] {
     // we freeze the object so users don't change nested props accidentally
     // TODO: figure out something that would throw an error if you try to update it?
     if (_.get(this._draftData, `userEnteredFormat.${param}`)) {
@@ -111,7 +123,7 @@ class GoogleSpreadsheetCell {
     return Object.freeze(this._rawData.userEnteredFormat[param]);
   }
 
-  _setFormatParam(param, newVal) {
+  private _setFormatParam<T extends keyof CellFormat>(param: T, newVal: CellFormat[T]) {
     if (_.isEqual(newVal, _.get(this._rawData, `userEnteredFormat.${param}`))) {
       _.unset(this._draftData, `userEnteredFormat.${param}`);
     } else {
@@ -123,6 +135,7 @@ class GoogleSpreadsheetCell {
   // format getters
   get numberFormat() { return this._getFormatParam('numberFormat'); }
   get backgroundColor() { return this._getFormatParam('backgroundColor'); }
+  get backgroundColorStyle() { return this._getFormatParam('backgroundColorStyle'); }
   get borders() { return this._getFormatParam('borders'); }
   get padding() { return this._getFormatParam('padding'); }
   get horizontalAlignment() { return this._getFormatParam('horizontalAlignment'); }
@@ -134,17 +147,18 @@ class GoogleSpreadsheetCell {
   get textRotation() { return this._getFormatParam('textRotation'); }
 
   // format setters
-  set numberFormat(newVal) { return this._setFormatParam('numberFormat', newVal); }
-  set backgroundColor(newVal) { return this._setFormatParam('backgroundColor', newVal); }
-  set borders(newVal) { return this._setFormatParam('borders', newVal); }
-  set padding(newVal) { return this._setFormatParam('padding', newVal); }
-  set horizontalAlignment(newVal) { return this._setFormatParam('horizontalAlignment', newVal); }
-  set verticalAlignment(newVal) { return this._setFormatParam('verticalAlignment', newVal); }
-  set wrapStrategy(newVal) { return this._setFormatParam('wrapStrategy', newVal); }
-  set textDirection(newVal) { return this._setFormatParam('textDirection', newVal); }
-  set textFormat(newVal) { return this._setFormatParam('textFormat', newVal); }
-  set hyperlinkDisplayType(newVal) { return this._setFormatParam('hyperlinkDisplayType', newVal); }
-  set textRotation(newVal) { return this._setFormatParam('textRotation', newVal); }
+  set numberFormat(newVal: CellFormat['numberFormat']) { this._setFormatParam('numberFormat', newVal); }
+  set backgroundColor(newVal: CellFormat['backgroundColor']) { this._setFormatParam('backgroundColor', newVal); }
+  set backgroundColorStyle(newVal: CellFormat['backgroundColorStyle']) { this._setFormatParam('backgroundColorStyle', newVal); }
+  set borders(newVal: CellFormat['borders']) { this._setFormatParam('borders', newVal); }
+  set padding(newVal: CellFormat['padding']) { this._setFormatParam('padding', newVal); }
+  set horizontalAlignment(newVal: CellFormat['horizontalAlignment']) { this._setFormatParam('horizontalAlignment', newVal); }
+  set verticalAlignment(newVal: CellFormat['verticalAlignment']) { this._setFormatParam('verticalAlignment', newVal); }
+  set wrapStrategy(newVal: CellFormat['wrapStrategy']) { this._setFormatParam('wrapStrategy', newVal); }
+  set textDirection(newVal: CellFormat['textDirection']) { this._setFormatParam('textDirection', newVal); }
+  set textFormat(newVal: CellFormat['textFormat']) { this._setFormatParam('textFormat', newVal); }
+  set hyperlinkDisplayType(newVal: CellFormat['hyperlinkDisplayType']) { this._setFormatParam('hyperlinkDisplayType', newVal); }
+  set textRotation(newVal: CellFormat['textRotation']) { this._setFormatParam('textRotation', newVal); }
 
   clearAllFormatting() {
     // need to track this separately since by setting/unsetting things, we may end up with
@@ -171,11 +185,14 @@ class GoogleSpreadsheetCell {
   }
 
   async save() {
-    await this._sheet.saveUpdatedCells([this]);
+    await this._sheet.saveCells([this]);
   }
 
-  // used by worksheet when saving cells
-  // returns an individual batchUpdate request to update the cell
+  /**
+   * used by worksheet when saving cells
+   * returns an individual batchUpdate request to update the cell
+   * @internal
+   */
   _getUpdateRequest() {
     // this logic should match the _isDirty logic above
     // but we need it broken up to build the request below
@@ -235,5 +252,3 @@ class GoogleSpreadsheetCell {
     };
   }
 }
-
-module.exports = GoogleSpreadsheetCell;
